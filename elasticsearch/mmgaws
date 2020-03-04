@@ -1,0 +1,301 @@
+#!/bin/bash
+
+usage='Usage: mmgaws ACCOUNT [ TEAM ROLE ]'
+
+mmgaws_login_root_account(){
+    local team="$1"
+    command -v jq >/dev/null 2>&1 || {
+        echo "jq not found - please install" >&2;
+        return 1;
+    }
+    command -v curl >/dev/null 2>&1 || {
+        echo "curl not found - please install" >&2;
+        return 1;
+    }
+    command -v aws >/dev/null 2>&1 || {
+        echo "awscli (aws) not found - please install" >&2;
+        return 1;
+    }
+
+    local password=
+    local client_id=29a1730b8e311600e93661430be8857680778be23c56a23365ccbe375117a98e
+    local client_secret=90c38991540e4c25e83a3f1164a974388f5c531030a961c81892624c7a79ac91
+    echo "Logging into mergermarket account..." >&2;
+    if [ -z "$EMAIL" ]; then
+        read -r -p 'email ($EMAIL not set)? ' EMAIL
+    fi
+    echo "Using username $EMAIL" >&2
+    if [ -z "$MMG_PASSWORD" ]; then
+        read -r -p 'password? ' -s password
+    else
+        password="${MMG_PASSWORD}"
+    fi
+    echo >&2
+    local oauth_response
+    oauth_response="$( \
+        curl -s https://api.us.onelogin.com/auth/oauth2/token \
+            -X POST \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: client_id:$client_id, client_secret: $client_secret" \
+            -d '{"grant_type":"client_credentials"}' \
+    )"
+    if [ "$(echo "$oauth_response" | jq -j '.status.error')" == "true" ]; then
+        echo "Error getting oauth token from OneLogin: $oauth_response" >&2
+        return 1
+    fi
+    local access_token
+    access_token="$( \
+        echo "$oauth_response" | jq -j .data[0].access_token \
+    )"
+    local saml_response
+    saml_response="$( \
+        curl -Ss https://api.us.onelogin.com/api/1/saml_assertion \
+             -X POST \
+             -H 'Content-Type: application/json' \
+             -H "Authorization: bearer:$access_token" \
+             -d '{
+                    "username_or_email": '"$(echo "$EMAIL" | jq -R '. | ascii_downcase')"',
+                    "password": '"$(echo "$password" | jq -R .)"',
+                    "app_id": "645570",
+                    "subdomain": "mmg"
+                 }' \
+    )"
+    if [ "$(echo "$saml_response" | jq -j '.status.error')" == "true" ]; then
+        echo "Error getting SAML assertion from from OneLogin: $saml_response" >&2
+        return 1
+    fi
+    local selected_mfa
+    # If there is a verify_factor response, do MFA auth
+    if [ "$(echo "$saml_response" |  jq -j '.data | type')" == "array" ] ; then
+        local devices
+        devices="$(echo "$saml_response" | jq .data[0].devices)"
+        local number_of_devices
+        number_of_devices="$(echo "$devices" | jq length)"
+        if [ "$number_of_devices" -eq "0" ]; then
+            echo unexpected 0 devices >&2
+            return 1
+        elif [ "$number_of_devices" -eq "1" ]; then
+            selected_mfa="$(echo "$devices" | jq -r ".[0]")"
+        else
+            echo MFA devices available: >&2
+            echo "$devices" | jq -r '
+                to_entries | map("  \(.key): \(.value.device_type)")[]
+            ' >&2
+            if [ "$MMGAWS_MFA_INDEX" != "" ]; then
+                selected_mfa="$(echo "$devices" | jq -r ".[$MMGAWS_MFA_INDEX]")"
+                if [ "$selected_mfa" == "null" ]; then
+                    selected_mfa=
+                fi
+            fi
+            while [ "$selected_mfa" == "" ]; do
+                local selected_mfa_index
+                read -p 'mfa? ' selected_mfa_index
+                selected_mfa="$(echo "$devices" | jq -r ".[$selected_mfa_index]")"
+                if [ "$selected_mfa" == "null" ]; then
+                    selected_mfa=
+                else
+                    echo To make this the default run:                    >&2
+                    echo                                                  >&2
+                    echo "   export MMGAWS_MFA_INDEX=$selected_mfa_index" >&2
+                    echo                                                  >&2
+                fi
+            done
+        fi
+        local device_type
+        local device_id
+        device_type="$(echo "$selected_mfa" | jq -r .device_type)"
+        device_id="$(echo "$selected_mfa" | jq -r .device_id)"
+        echo "Selected $device_type" >&2
+
+        local state_token
+        state_token="$(echo "$saml_response" | jq -j '.data[0].state_token')"
+
+        local otp_data="{
+            \"app_id\": \"645570\",
+            \"device_id\": \"${device_id}\",
+            \"state_token\": \"${state_token}\"
+        }"
+
+        if [[ "$device_type" == "Google Authenticator" || "$device_type" == "Yubico YubiKey" ]]; then
+            local otp_token
+            read -r -p 'MFA token? ' otp_token
+            otp_data="$(echo "$otp_data" | jq ". + {otp_token: \"$otp_token\"}")"
+        fi
+        local callback_url
+        callback_url="$(echo "$saml_response" | jq -j '.data[0].callback_url')"
+        while true; do
+            saml_response="$( \
+                curl -Ss "$callback_url" \
+                    -X POST \
+                    -H 'Content-Type: application/json' \
+                    -H "Authorization: bearer:$access_token" \
+                    -d "$otp_data"
+            )"
+            local mfa_status
+            mfa_status="$(echo "$saml_response" | jq -r '.status.type')"
+            if [ "$mfa_status" == "pending" ]; then
+                otp_data="$(echo "$otp_data" | jq ". + {do_not_notify: \"true\"}")"
+                sleep 3
+            elif [ "$mfa_status" == "success" ]; then
+                break
+            else
+                echo "$saml_response" | jq -r .status.message >&2
+                return 1
+            fi
+        done
+
+    fi
+    local saml_assertion
+    saml_assertion="$( \
+        echo "$saml_response" | jq -j .data \
+    )"
+    if [ "$saml_assertion" == "null" ]; then
+            echo "$saml_response"
+    fi
+    local assume_role_result
+    assume_role_result="$(
+        aws sts assume-role-with-saml \
+            --role-arn "arn:aws:iam::109201950569:role/$team" \
+            --principal-arn arn:aws:iam::109201950569:saml-provider/onelogin \
+            --saml-assertion "$saml_assertion" \
+    )"
+    if [ "$?" -ne "0" ]; then
+        echo >&2
+        echo "Error assuming role from SAML via AWS - a common cause of this is that the SAML returned from OneLogin" >&2
+        echo "did not indicate that you are allowed to assume the $team role in the root (mergermarket) AWS account. Please" >&2
+        echo "confirm that you have the role name right (typically DevTeam-...) and that you are a member." >&2
+        return 1
+    fi
+    eval "$(echo "$assume_role_result" | jq -j '"export MMGAWS_ACCESS_KEY_ID=" + .Credentials.AccessKeyId')"
+    eval "$(echo "$assume_role_result" | jq -j '"export MMGAWS_SECRET_ACCESS_KEY=" + .Credentials.SecretAccessKey')"
+    eval "$(echo "$assume_role_result" | jq -j '"export MMGAWS_SESSION_TOKEN=" + .Credentials.SessionToken')"
+    export MMGAWS_EMAIL="$EMAIL"
+}
+
+mmgaws_root_account_login_valid(){
+    command -v aws >/dev/null 2>&1 || {
+        echo "awscli (aws) not found - please install" >&2;
+        return 1;
+    }
+    if [ -z "$MMGAWS_ACCESS_KEY_ID" ]; then
+        return 1
+    fi
+    AWS_ACCESS_KEY_ID="$MMGAWS_ACCESS_KEY_ID" \
+    AWS_SECRET_ACCESS_KEY="$MMGAWS_SECRET_ACCESS_KEY" \
+    AWS_SESSION_TOKEN="$MMGAWS_SESSION_TOKEN" \
+    aws sts get-caller-identity > /dev/null 2>&1
+    return $?
+}
+
+mmgaws_assume_role(){
+    command -v jq >/dev/null 2>&1 || {
+        echo "jq not found - please install" >&2;
+        return 1;
+    }
+    command -v aws >/dev/null 2>&1 || {
+        echo "awscli (aws) not found - please install" >&2;
+        return 1;
+    }
+
+    local account="$1"
+    local role="$2"
+    echo Assuming role "arn:aws:iam::$account:role/$role"... >&2
+    local assume_role_result
+    assume_role_result="$(
+        AWS_ACCESS_KEY_ID=$MMGAWS_ACCESS_KEY_ID \
+        AWS_SECRET_ACCESS_KEY=$MMGAWS_SECRET_ACCESS_KEY \
+        AWS_SESSION_TOKEN=$MMGAWS_SESSION_TOKEN \
+        aws sts assume-role \
+            --role-arn "arn:aws:iam::$account:role/$role" \
+            --role-session-name "$MMGAWS_EMAIL" \
+    )"
+    if [ "$?" -ne "0" ]; then
+        echo "Error assuming role $role in account $account - maybe you do not have permission?" >&2
+        return 1
+    fi
+    echo Success. >&2
+    eval "$(echo "$assume_role_result" | jq -j '"export AWS_ACCESS_KEY_ID=" + .Credentials.AccessKeyId')"
+    eval "$(echo "$assume_role_result" | jq -j '"export AWS_SECRET_ACCESS_KEY=" + .Credentials.SecretAccessKey')"
+    eval "$(echo "$assume_role_result" | jq -j '"export AWS_SESSION_TOKEN=" + .Credentials.SessionToken')"
+}
+
+mmgaws_account_for_alias(){
+    local alias="$1"
+    local account_id
+    account_id="$( \
+        AWS_ACCESS_KEY_ID="$MMGAWS_ACCESS_KEY_ID" \
+        AWS_SECRET_ACCESS_KEY="$MMGAWS_SECRET_ACCESS_KEY" \
+        AWS_SESSION_TOKEN="$MMGAWS_SESSION_TOKEN" \
+        aws organizations list-accounts --query "Accounts[?Name==\`$alias\`].[Id]" --output text \
+    )"
+    if [ "$account_id" == "" ]; then
+        echo "No account alias found, using $alias." >&2
+        echo "$alias"
+    else
+        echo "Found account $account_id for alias $alias." >&2
+        echo "$account_id"
+    fi
+}
+
+validateTeam() {
+    if [[ -z "$1" && -z "$MMGAWS_TEAM" ]]; then
+        read -r -p 'Team? (eg DevTeam-Avengers, DevTeam-Zelda) ' validatedTeam
+    else
+        validatedTeam=${MMGAWS_TEAM:-$1}
+    fi
+
+    echo $validatedTeam
+}
+
+mmgaws(){
+    if [ -z "$BASH_VERSION" ]; then
+        echo Error: this script needs to be run in bash >&2
+        return 1
+    fi
+    if [ -z "$mmgaws_running_as_command" ]; then
+        echo Warning: mmgaws running as a function - do not use eval >&2
+    fi
+    unset AWS_PROFILE
+    unset AWS_ACCESS_KEY_ID
+    unset AWS_SECRET_ACCESS_KEY
+    unset AWS_SESSION_TOKEN
+    local account="$1"
+    local team="$(validateTeam $2)"
+    local role="${3:-$team}"
+
+    if [ -z "$account" ]; then
+        return 1
+    fi
+    if ! mmgaws_root_account_login_valid && ! mmgaws_login_root_account "$team"; then
+        return 1
+    fi
+    if [ "$account" == "root" ]; then
+        export AWS_ACCESS_KEY_ID="$MMGAWS_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$MMGAWS_SECRET_ACCESS_KEY"
+        export AWS_SESSION_TOKEN="$MMGAWS_SESSION_TOKEN"
+        echo Success. >&2
+    elif ! mmgaws_assume_role "$(mmgaws_account_for_alias "$account")" "$role"; then
+        return 1
+    fi
+    export MMGAWS_TEAM="$team"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    usage="Usage: eval \$($0 ACCOUNT TEAM [ ROLE ])"
+    if [ -t 1 ]; then
+        echo 'WARNING output is configured to go to a tty, but the output should be passed to eval: eval $(mmaws ...)'
+    fi
+    mmgaws_running_as_command=1
+    mmgaws "$@" || exit 1
+    mmgaws_running_as_command=
+
+    echo "export MMGAWS_ACCESS_KEY_ID='$MMGAWS_ACCESS_KEY_ID'"
+    echo "export MMGAWS_SECRET_ACCESS_KEY='$MMGAWS_SECRET_ACCESS_KEY'"
+    echo "export MMGAWS_SESSION_TOKEN='$MMGAWS_SESSION_TOKEN'"
+    echo "export MMGAWS_EMAIL='$MMGAWS_EMAIL'"
+    echo "export MMGAWS_TEAM='$MMGAWS_TEAM'"
+
+    echo "export AWS_ACCESS_KEY_ID='$AWS_ACCESS_KEY_ID'"
+    echo "export AWS_SECRET_ACCESS_KEY='$AWS_SECRET_ACCESS_KEY'"
+    echo "export AWS_SESSION_TOKEN='$AWS_SESSION_TOKEN'"
+fi
