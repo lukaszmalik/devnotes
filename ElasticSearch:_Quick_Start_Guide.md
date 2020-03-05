@@ -80,6 +80,52 @@ POST /pages/_update/12
   }
 }
 ```
+### Recepies
+#### Case insensitive Sorting
+Index:
+```sh
+PUT /deal
+{
+  "settings": {
+    "analysis": {
+      "normalizer": {
+        "case_insensitive": {
+          "filter": "lowercase"
+        }
+      }
+  },
+  "mappings": {
+    "properties": {
+      "targetCompanySortValue": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "normalizer": "case_insensitive"
+          }
+        }
+      }
+    }
+  }
+}
+```
+Query:
+```sh
+GET /deal/_search
+{
+  "_source": {
+    "includes": [
+      "targetCompanySortValue"
+    ]
+  },
+  "size": 20,
+  "sort": [
+    {
+      "targetCompanySortValue.keyword": "desc"
+    }
+  ]
+}
+```
 ### Commands
 ```sh
 # Adding a node to a cluster (dev only)
