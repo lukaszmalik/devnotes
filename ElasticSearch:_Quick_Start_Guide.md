@@ -80,7 +80,48 @@ POST /pages/_update/12
   }
 }
 ```
+##### Aliases
+###### Add: 
+```bash
+POST /_aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "deal.v2.2",
+        "alias": "deal"
+      }
+    }
+  ]
+}
+```
+###### Remove
+```bash
+POST /_aliases
+{
+  "actions": [
+    {
+      "remove": {
+        "index": "deal.v2.1",
+        "alias": "deal"
+      }
+    }
+  ]
+}
+```
 ### Recepies
+#### Copy data between indexes:
+```sh
+POST /_reindex?wait_for_completion=true
+{
+  "source": {
+    "index": "deal.v2.1"
+  },
+  "dest": {
+    "index": "deal.v2.2"
+  }
+}
+```
 #### Case insensitive Sorting
 Index:
 ```sh
