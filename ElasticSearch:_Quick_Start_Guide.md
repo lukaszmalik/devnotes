@@ -110,7 +110,7 @@ POST /_aliases
 }
 ```
 ### Recepies
-#### Extract and search throu nested properties of a document
+#### Extract and search through nested properties of a document
 ##### Index
 ```json
 PUT deal
