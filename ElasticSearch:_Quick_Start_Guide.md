@@ -370,7 +370,7 @@ GET /deal/_search
 bin/elasticsearch -Enode.name=node-3 -Epath.data=./node-3/data -Epath.logs=./node-3/logs
 ```
 
-## Miscalanous
+## Miscellaneous
 ### Concepts 
 ####  Sharding
 **_Sharding_**: dividing indeces into smaller piecies (shards), it's done on an index level. Shards can be though of as independent indeces. Each shard is a seperate _Apache Luciene_ index. Disc space used grows as documents are added. The shard storage limit is 2 bilion documents. Queries can be run on multiple shards simultaneously. Running `GET /_cat/indices?v` gives us a `pri` column - this is the number of shards per index. For increasing/decreasing the number of shards see `Split API` / `Shrink API`. Create more than one shard only fox indexes with more than a milion documents.
