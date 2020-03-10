@@ -1,4 +1,209 @@
 ## PARR-1542
+### Mapping
+```json
+PUT deal
+{
+  "settings": {
+    "analysis": {
+      "filter": {
+        "autocomplete_filter": {
+          "type": "edge_ngram",
+          "min_gram": 1,
+          "max_gram": 10
+        }
+      },
+      "normalizer": {
+        "case_insensitive": {
+          "filter": "lowercase"
+        }
+      },
+      "analyzer": {
+        "autocomplete_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "autocomplete_filter"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "dealValue": {
+        "type": "nested",
+        "properties": {
+          "currencyCode": {
+            "type": "keyword"
+          },
+          "isDominant": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "float"
+          }
+        }
+      },
+      "companies": {
+        "properties": {
+          "bidders": {
+            "type": "nested",
+            "properties": {
+              "name": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "normalizer": "case_insensitive"
+                  }
+                }
+              },
+              "sectors" : {
+                "type": "nested",
+                "properties" : {
+                  "code" : {
+                    "type" : "text",
+                    "fields" : {
+                      "keyword" : {
+                        "type" : "keyword",
+                        "normalizer": "case_insensitive"
+                      }
+                    }
+                  },
+                  "name" : {
+                    "type" : "text",
+                    "fields" : {
+                      "keyword" : {
+                        "type" : "keyword",
+                        "normalizer": "case_insensitive"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "targets": {
+          "type": "nested",
+            "properties": {
+              "name": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "normalizer": "case_insensitive"
+                  }
+                }
+              },
+              "sectors" : {
+                "type": "nested",
+                "properties" : {
+                  "code" : {
+                    "type" : "text",
+                    "fields" : {
+                      "keyword" : {
+                        "type" : "keyword",
+                        "normalizer": "case_insensitive"
+                      }
+                    }
+                  },
+                  "name" : {
+                    "type" : "text",
+                    "fields" : {
+                      "keyword" : {
+                        "type" : "keyword",
+                        "normalizer": "case_insensitive"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "dominantTargetGeography": {
+        "properties": {
+          "name": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "normalizer": "case_insensitive"
+              }
+            }
+          }
+        }
+      },
+      "dominantSector": {
+        "properties": {
+          "name": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "normalizer": "case_insensitive"
+              }
+            }
+          }
+        }
+      },
+      "timetableEvents": {
+        "type": "nested",
+        "properties": {
+          "agencyName": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "normalizer": "case_insensitive"
+              }
+            }
+          },
+          "agencyJurisdiction": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "normalizer": "case_insensitive"
+              }
+            }
+          },
+          "agencyJurisdictionGroup": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "normalizer": "case_insensitive"
+              }
+            }
+          }
+        }
+      },
+      "targetCompanySortValue": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "normalizer": "case_insensitive"
+          }
+        }
+      },
+      "bidderCompanySortValue": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "normalizer": "case_insensitive"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ### Agency picker
 #### Query
 ```json
