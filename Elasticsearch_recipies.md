@@ -174,5 +174,73 @@ GET deal.v2.3/_search
 #### Curl command
 ```sh
 curl  -s http://web:9200/deal/_search -H "Content-Type: application/json" -d "$(cat query.json)" | jq ".aggregations.companies.filtered_companies.group_by_company.buckets[].additional_data.hits.hits[]._source.name"
+````
 
+### Jurisdiction picker
+#### Query
+```json
+{
+  "size": 0,
+  "aggs": {
+    "TTE": {
+      "nested": {
+        "path": "timetableEvents"
+      },
+      "aggs": {
+        "filtered_timetableEvents": {
+          "filter": {
+            "bool": {
+              "should": [
+                {
+                  "wildcard": {
+                    "timetableEvents.agencyJurisdiction.keyword": "a*"
+                  }
+                },
+                {
+                  "wildcard": {
+                    "timetableEvents.agencyJurisdictionGroup.keyword": "a*"
+                  }
+                }
+              ]
+            }
+          },
+          "aggs": {
+            "group_by_company": {
+              "terms": {
+                "order": {
+                  "_key": "asc"
+                },
+                "size": 20,
+                "field": "timetableEvents.agencyJurisdiction.keyword"
+              },
+              "aggs": {
+                "top": {
+                  "top_hits": {
+                    "size": 1,
+                    "_source": [
+                      "timetableEvents.agencyJurisdiction",
+                      "timetableEvents.agencyJurisdictionGroup"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+````
+#### Curl command
+```sh
+curl  -s http://web:9200/deal/_search -H "Content-Type: application/json" -d "$(cat query.json)" | jq ".aggregations.TTE.filtered_timetableEvents.group_by_company.buckets[].top.hits.hits[]._source" 
+````
+
+### Sector picker
+#### Query
+```json
+````
+#### Curl command
+```sh
 ````
