@@ -155,17 +155,17 @@ PUT deal/_doc/1
       "agencyJurisdiction": "Brazil"
     },
     {
-      "first": "Brazilian Secretariat for Economic Monitoring of the Ministry of Finance",
+      "agencyName": "Brazilian Secretariat for Economic Monitoring of the Ministry of Finance",
       "agencyId": 2,
       "agencyJurisdiction": "Brazil"
     },
     {
-      "first": "Brazilian National Agency for Civil Aviation",
+      "agencyName": "Brazilian National Agency for Civil Aviation",
       "agencyId": 3,
       "agencyJurisdiction": "Brazil"
     },
     {
-      "first": "Brazilian Electricity Regulatory Agency",
+      "agencyName": "Brazilian Electricity Regulatory Agency",
       "agencyId": 4,
       "agencyJurisdiction": "Brazil"
     }
@@ -175,7 +175,7 @@ PUT deal/_doc/2
 {
   "timetableEvents": [
     {
-      "first": "Brazilian Electricity Regulatory Agency",
+      "agencyName": "Brazilian Electricity Regulatory Agency",
       "agencyId": 5,
       "agencyJurisdiction": "Brazil"
     }
