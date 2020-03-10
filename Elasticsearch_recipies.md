@@ -237,10 +237,113 @@ curl  -s http://web:9200/deal/_search -H "Content-Type: application/json" -d "$(
 curl  -s http://web:9200/deal/_search -H "Content-Type: application/json" -d "$(cat query.json)" | jq ".aggregations.TTE.filtered_timetableEvents.group_by_company.buckets[].top.hits.hits[]._source" 
 ````
 
-### Sector picker
+### Target Sector picker
 #### Query
 ```json
+{
+  "size": 0,
+  "aggs": {
+    "targets": {
+      "nested": {
+        "path": "companies.targets.sectors"
+      },
+      "aggs": {
+        "filtered_targets": {
+          "filter": {
+            "bool": {
+              "should": [
+                {
+                  "wildcard": {
+                    "companies.targets.sectors.name.keyword": "a*"
+                  }
+                }
+              ]
+            }
+          },
+          "aggs": {
+            "group_by_company": {
+              "terms": {
+                "order": {
+                  "_key": "asc"
+                },
+                "size": 20,
+                "field": "companies.targets.sectors.name.keyword"
+              },
+              "aggs": {
+                "additional_data": {
+                  "top_hits": {
+                    "size": 1,
+                    "_source": [
+                      "companies.targets.sectors.code",
+                      "companies.targets.sectors.name"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
 ````
 #### Curl command
 ```sh
+curl  -s http://web:9200/deal/_search -H "Content-Type: application/json" -d "$(cat query.json)" | jq ".aggregations.targets.filtered_targets.group_by_company.buckets[].additional_data.hits.hits[]._source"
+````
+### Bidder Sector picker
+#### Query
+```json
+{
+  "size": 0,
+  "aggs": {
+    "bidders": {
+      "nested": {
+        "path": "companies.bidders.sectors"
+      },
+      "aggs": {
+        "filtered_bidders": {
+          "filter": {
+            "bool": {
+              "should": [
+                {
+                  "wildcard": {
+                    "companies.bidders.sectors.name.keyword": "a*"
+                  }
+                }
+              ]
+            }
+          },
+          "aggs": {
+            "group_by_company": {
+              "terms": {
+                "order": {
+                  "_key": "asc"
+                },
+                "size": 20,
+                "field": "companies.bidders.sectors.name.keyword"
+              },
+              "aggs": {
+                "additional_data": {
+                  "top_hits": {
+                    "size": 1,
+                    "_source": [
+                      "companies.bidders.sectors.code",
+                      "companies.bidders.sectors.name"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+````
+#### Curl command
+```sh
+curl  -s http://web:9200/deal/_search -H "Content-Type: application/json" -d "$(cat query.json)" | jq ".aggregations.bidders.filtered_bidders.group_by_company.buckets[].additional_data.hits.hits[]._source"
 ````
